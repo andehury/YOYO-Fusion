@@ -2,9 +2,9 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-YOYO-Fusion is a merge method. Unlike simple averaging, YOYO-Fusion operates in a normalized subspace, uses robust statistics to handle outliers, and preserves meaningful model diversity while discarding noisy or conflicting directions.
+YOYO-Fusion is an efficient merging technique for large language models (LLMs). Its core advantage lies in realizing a "three-no" merging paradigm—no additional data required, no parameter tuning needed, and no dependence on pre-trained models.
 
-Designed for high-quality fusion of the same architecture, YOYO-Fusion produces merged models that often outperform both individual inputs and naive merge baselines.
+This method can efficiently absorb the high-value knowledge and capabilities of multiple fine-tuned models while maintaining the model's strong robustness, providing a new approach for building high-performance models at low cost.
 
 ---
 
