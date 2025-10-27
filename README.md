@@ -1,8 +1,8 @@
-# YOYO-Fusion: Robust Subspace Model Merging
+# YOYO-Fusion: Plug-and-Play Merging of Arbitrary Fine-Tunes with Shared Architecture
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-YOYO-Fusion is a robust, geometry-aware method for merging multiple large language models (LLMs) or vision-language models at the weight level. Unlike simple averaging, YOYO-Fusion operates in a normalized subspace, uses robust statistics to handle outliers, and preserves meaningful model diversity while discarding noisy or conflicting directions.
+YOYO-Fusion is a merge method for merging multiple large language models. Unlike simple averaging, YOYO-Fusion operates in a normalized subspace, uses robust statistics to handle outliers, and preserves meaningful model diversity while discarding noisy or conflicting directions.
 
 Designed for high-quality fusion of the same architecture, YOYO-Fusion produces merged models that often outperform both individual inputs and naive merge baselines.
 
@@ -78,9 +78,8 @@ This ensures the merged model retains meaningful capabilities from all inputs wh
 
 | Scenario | Recommended Settings |
 |--------|----------------------|
-| Merge 2–4 fine-tuned variants of same base model (e.g., instruction + coding + reasoning) | `anchor_index=0`, `use_geometric_median=True`, `use_k_minus_one_truncation=True` |
-| Preserve behavior of a specific model (e.g., keep strong instruction-following) | `anchor_index=1` (or desired model index), other flags ignored |
-| Full-rank fusion| `use_k_minus_one_truncation=False` |
+| Merge many fine-tuned variantsl | `anchor_index=0`, `use_geometric_median=True/False`, `use_k_minus_one_truncation=True/False` |
+| Preserve behavior of a specific model | `anchor_index=1`, `use_k_minus_one_truncation=True/False` |
 
 Best Practice: Always validate merged models with task-specific benchmarks.
 
