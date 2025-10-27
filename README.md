@@ -10,8 +10,7 @@ This method can efficiently absorb the high-value knowledge and capabilities of 
 
 ## Key Features
 
-- Robust Centering: Uses coordinate median or geometric median (Weiszfeld algorithm) as fusion center—resistant to outlier models.
-- Anchor Mode: Optionally lock to a specific model as the reference (e.g., preserve instruction-following behavior).
+- Consensus Center: Determine the center (select a fine-tuned model) and estimate the center (lower median / geometric median)
 - Subspace Truncation: Projects weight differences into a low-rank subspace (rank ≤ K−1 for K models) to remove consensus noise.
 - Outlier Suppression: Applies Tukey’s biweight weighting in the subspace to downweight anomalous models per dimension.
 - Norm Preservation: Automatically rescales output to match the average norm statistics of input models.
@@ -78,8 +77,8 @@ This ensures the merged model retains meaningful capabilities from all inputs wh
 
 | Scenario | Recommended Settings |
 |--------|----------------------|
-| Merge many fine-tuned variant | `anchor_index=0`, `use_geometric_median=True/False`, `use_k_minus_one_truncation=True/False` |
-| Preserve behavior of a specific model | `anchor_index=1`, `use_k_minus_one_truncation=True/False` |
+| Balance and absorb multiple models | `anchor_index=0`, `use_geometric_median=True/False`, `use_k_minus_one_truncation=True` |
+| Preserve behavior of a specific model | `anchor_index=1`, `use_k_minus_one_truncation=True` |
 
 Best Practice: Always validate merged models with task-specific benchmarks.
 
@@ -115,8 +114,6 @@ The script auto-detects whether models are sharded or single-file and handles bo
 | `use_k_minus_one_truncation` | bool | True | Truncate SVD to rank K−1 and apply energy scaling (recommended) |
 | `use_geometric_median` | bool | False | Use geometric median instead of coordinate median (only if `anchor_index=0`) |
 
-Note: `use_geometric_median` and `use_k_minus_one_truncation` are ignored when `anchor_index != 0`.
-
 ---
 
 ## License
@@ -128,19 +125,4 @@ http://www.apache.org/licenses/LICENSE-2.0
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 
 ---
-
-## Acknowledgements
-
-- Uses Weiszfeld’s algorithm for geometric median.
-- Leverages Tukey’s biweight for outlier-resistant aggregation.
-
----
-
-## Feedback & Contributions
-
-Found a bug? Have an idea? Open an issue or PR.  
-YOYO-Fusion is research-friendly and production-ready for model merging experiments.
-
----
-
 Note: This tool merges weights only. It does not merge tokenizers, configs, or generation settings—those are copied from the `config_dir` model. Always verify compatibility of input models (same architecture, vocab size, etc.).
