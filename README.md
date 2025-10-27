@@ -101,14 +101,14 @@ The script auto-detects whether models are sharded or single-file and handles bo
 
 ## Parameters Explained
 
-| Parameter | Type | Default | Description |
-|---------|------|--------|-------------|
-| `model_paths` | List[str] | — | Paths to input model directories (>=2) |
-| `output_dir` | str | — | Output directory for merged model |
-| `anchor_index` | int | 0 | 0: no anchor (robust center); n>=1: use n-th model as anchor (1-based) |
-| `config_dir` | int | 1 | Which model’s config/index files to copy (1-based) |
-| `use_k_minus_one_truncation` | bool | True | Truncate SVD to rank K−1 and apply energy scaling (recommended) |
-| `use_geometric_median` | bool | False | Use geometric median instead of coordinate median (only if `anchor_index=0`) |
+|Parameter|Type|Description|
+|---|---|---|
+|model_paths|List[str]|Paths to input model directories (>=2)|
+|output_dir|str|Output directory for merged model|
+|anchor_index|int|0: no anchor (robust center); n>=1: use n-th model as anchor (1-based)|
+|config_dir|int|Which model’s config/index files to copy|
+|use_k_minus_one_truncation|bool|True: truncation + energy scaling False: full SVD (no truncation)|
+|use_geometric_median|bool|True: use geometric median False: use lower median (only if `anchor_index=0`) |
 
 ---
 
