@@ -1,6 +1,6 @@
 # YOYO-Fusion: Plug-and-Play Merging of Arbitrary Fine-Tunes with Shared Architecture
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-orange.svg)](LICENSE)
 
 YOYO-Fusion is an efficient merging technique for large language models (LLMs). Its core advantage lies in realizing a "three-no" merging paradigm—no additional data required, no parameter tuning needed, and no dependence on pre-trained models.
 
