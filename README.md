@@ -45,10 +45,10 @@ run_merge(
         "path/to/model_C"
     ],
     output_dir="path/to/merged_model",
-    anchor_index=0,               # 0 = no anchor (use robust center); 1+ = use n-th model as anchor
-    config_dir=1,                 # which model's config/index to copy (1-based)
-    use_k_minus_one_truncation=True,   # recommended: True
-    use_geometric_median=True          # more robust than coordinate median
+    anchor_index=0,  # n=0: no anchor n>=1: use n-th model as anchor
+    config_dir=1,  # m>=1 use m-th as config
+    use_k_minus_one_truncation=True,  # True: truncation + energy scaling False: full SVD (no truncation)
+    use_geometric_median=True,  # True: use geometric median False: use lower median
 )
 ```
 
@@ -80,7 +80,7 @@ This ensures the merged model retains meaningful capabilities from all inputs wh
 |--------|----------------------|
 | Merge 2–4 fine-tuned variants of same base model (e.g., instruction + coding + reasoning) | `anchor_index=0`, `use_geometric_median=True`, `use_k_minus_one_truncation=True` |
 | Preserve behavior of a specific model (e.g., keep strong instruction-following) | `anchor_index=1` (or desired model index), other flags ignored |
-| Experimental full-rank fusion (not recommended) | `use_k_minus_one_truncation=False` |
+| Full-rank fusion| `use_k_minus_one_truncation=False` |
 
 Best Practice: Always validate merged models with task-specific benchmarks.
 
