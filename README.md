@@ -51,8 +51,6 @@ run_merge(
 )
 ```
 
-Tip: For most cases, keep `anchor_index=0`, `use_k_minus_one_truncation=True`, and `use_geometric_median=True`.
-
 ---
 
 ## Algorithm Overview
@@ -77,10 +75,8 @@ This ensures the merged model retains meaningful capabilities from all inputs wh
 
 | Scenario | Recommended Settings |
 |--------|----------------------|
-| Balance and absorb multiple models | `anchor_index=0`, `use_geometric_median=True/False`, `use_k_minus_one_truncation=True` |
+| Absorb multiple models in a balanced manner | `anchor_index=0`, `use_geometric_median=True/False`, `use_k_minus_one_truncation=True` |
 | Preserve behavior of a specific model | `anchor_index=1`, `use_k_minus_one_truncation=True` |
-
-Best Practice: Always validate merged models with task-specific benchmarks.
 
 ---
 
