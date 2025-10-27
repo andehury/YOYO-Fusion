@@ -115,7 +115,7 @@ $$
 
   Initialized with the coordinate-wise median and iterated to convergence.
 
-- **Subcase B2: `use_geometric_median = False` (default)**  
+- **Subcase B2: `use_geometric_median = False`**  
   Use coordinate-wise lower median:
 
 $$
