@@ -78,7 +78,7 @@ This ensures the merged model retains meaningful capabilities from all inputs wh
 
 | Scenario | Recommended Settings |
 |--------|----------------------|
-| Merge many fine-tuned variantsl | `anchor_index=0`, `use_geometric_median=True/False`, `use_k_minus_one_truncation=True/False` |
+| Merge many fine-tuned variant | `anchor_index=0`, `use_geometric_median=True/False`, `use_k_minus_one_truncation=True/False` |
 | Preserve behavior of a specific model | `anchor_index=1`, `use_k_minus_one_truncation=True/False` |
 
 Best Practice: Always validate merged models with task-specific benchmarks.
