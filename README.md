@@ -10,7 +10,7 @@ This method can efficiently absorb the high-value knowledge and capabilities of 
 
 ## Key Features
 
-- Consensus Center: Determine the center (select a fine-tuned model) and estimate the center (lower median / geometric median)
+- Consensus Center: Determine the center (select a fine-tuned model) or estimate the center (lower median / geometric median)
 - Subspace Truncation: Projects weight differences into a low-rank subspace (rank ≤ K−1 for K models) to remove consensus noise.
 - Outlier Suppression: Applies Tukey’s biweight weighting in the subspace to downweight anomalous models per dimension.
 - Norm Preservation: Automatically rescales output to match the average norm statistics of input models.
