@@ -53,10 +53,10 @@ run_merge(
 
 ---
 
-# YOYO-Fusion Algorithm Overview
+## Algorithm Steps
 
 
-## Inputs
+### Step 0: Inputs
 
 A set of tensors:
 ```
@@ -70,8 +70,6 @@ where K ≥ 2 and each tᵢ ∈ ℝᴰ
   - If n ≥ 1: use model n as anchor (i.e., tₙ)
 - `use_geometric_median` ∈ {True, False} (only effective when anchor_index == 0)
 - `use_k_minus_one_truncation` ∈ {True, False}
-
-## Algorithm Steps
 
 ### Step 1: Normalize Input Tensors
 
