@@ -262,8 +262,8 @@ Reshape to original tensor shape.
 
 | Scenario | Recommended Settings |
 |--------|----------------------|
-| Absorb multiple models in a balanced manner | `anchor_index=0`, `use_geometric_median=True/False`, `use_k_minus_one_truncation=True` |
-| Preserve behavior of a specific model | `anchor_index=1`, `use_k_minus_one_truncation=True` |
+| Absorb multiple models in a balanced manner | `anchor_index=0`,`use_geometric_median=True/False`,`use_k_minus_one_truncation=True` |
+| Preserve behavior of a specific model | `anchor_index=1`,`use_k_minus_one_truncation=True` |
 
 ---
 
