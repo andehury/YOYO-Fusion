@@ -158,7 +158,7 @@ def subspace_robust_merge(
 
 
 # ---------------------------
-# I/O and merge logic (unchanged except parameter passing)
+# I/O and merge logic
 # ---------------------------
 
 def has_index_file(model_dir: Path) -> bool:
@@ -402,3 +402,4 @@ if __name__ == "__main__":
     )
 
     # The last switches only take effect when anchor_index=0
+
