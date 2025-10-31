@@ -18,21 +18,26 @@ def rms(x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
     return torch.sqrt(torch.sum(x.float() ** 2) / (D + 1e-12) + eps)
 
 
-def coordinate_lower_median(stack: torch.Tensor) -> torch.Tensor:
-    median_vals, _ = torch.median(stack, dim=0, keepdim=False)
-    return median_vals
+def standard_median(x: torch.Tensor, dim: int = 0) -> torch.Tensor:
+
+    sorted_vals, _ = torch.sort(x, dim=dim)
+    n = sorted_vals.shape[dim]
+    if n % 2 == 1:
+        return sorted_vals.select(dim, n // 2)
+    else:
+        mid1 = sorted_vals.select(dim, n // 2 - 1)
+        mid2 = sorted_vals.select(dim, n // 2)
+        return (mid1 + mid2) / 2.0
 
 
 def geometric_median(X: torch.Tensor, eps: float = 1e-8, max_iter: int = 100, tol: float = 1e-6) -> torch.Tensor:
-    """
-    Compute geometric median of points in X (K x D) using Weiszfeld's algorithm.
-    """
+
     K, D = X.shape
     if K == 1:
         return X[0].clone()
 
-    # Initialize with coordinate median
-    y = coordinate_lower_median(X).clone()
+    # Initialize with standard median (even-length → average of two middles)
+    y = standard_median(X, dim=0).clone()
     for _ in range(max_iter):
         diff = X - y.unsqueeze(0)  # [K, D]
         distances = torch.linalg.norm(diff, dim=1)  # [K]
@@ -78,7 +83,7 @@ def subspace_robust_merge(
         if use_geometric_median:
             M = geometric_median(X, eps=eps)
         else:
-            M = coordinate_lower_median(X)
+            M = standard_median(X, dim=0)
     else:
         anchor_pos = anchor_index - 1
         if not (0 <= anchor_pos < K):
@@ -339,15 +344,13 @@ def run_merge(
         use_geometric_median: bool = False,
 ):
     """
-    Enhanced merge with two new switches (only effective when anchor_index=0):
-
     - use_k_minus_one_truncation:
         True → truncate to K-1 components + energy scaling (default)
         False → use all K components, no scaling
 
     - use_geometric_median:
-        True → iterate from lower median to geometric median
-        False → use lower median directly (default)
+        True → iterate from standard median to geometric median
+        False → use standard median
     """
     assert len(model_paths) >= 2
     model_dirs = [Path(p) for p in model_paths]
@@ -395,10 +398,10 @@ if __name__ == "__main__":
     run_merge(
         model_paths=paths,
         output_dir=out_path,
-        anchor_index=0,  # n=0: no anchor n>=1: use n-th model as anchor
-        config_dir=1,  # m>=1 use m-th as config
-        use_k_minus_one_truncation=True,  # True: truncation + energy scaling False: full SVD (no truncation)
-        use_geometric_median=True,  # True: use geometric median False: use lower median
+        anchor_index=0,  # n=0: no anchor; n>=1: use n-th model as anchor
+        config_dir=1,    # m>=1: use m-th as config
+        use_k_minus_one_truncation=True,   # True: truncation + energy scaling; False: full SVD
+        use_geometric_median=True,         # True: use geometric median; False: use standard median
     )
 
     # The last switches only take effect when anchor_index=0
