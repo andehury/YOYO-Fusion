@@ -106,7 +106,7 @@ m = argminᵧ ∑ᵢ₌₁ᴷ ||uᵢ - y||₂
 Initialized with the coordinate-wise median and iterated to convergence.
 
 **Subcase B2: use_geometric_median = False**
-Use coordinate-wise lower median:
+Use coordinate-wise median:
 ```
 mⱼ = median(u₁ⱼ, u₂ⱼ, ..., uₖⱼ), ∀ j = 1,...,D
 ```
