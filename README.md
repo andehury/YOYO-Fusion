@@ -1,4 +1,4 @@
-# YOYO-Fusion: Plug-and-Play Merging of Arbitrary Fine-Tunes with Shared Architecture
+# YOYO-Fusion: Robust Merging in Residual Subspace
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-orange.svg)](LICENSE)
 
