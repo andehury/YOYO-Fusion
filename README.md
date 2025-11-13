@@ -45,9 +45,9 @@ run_merge(
     ],
     output_dir="path/to/merged_model",
     anchor_index=0,  # n=0: no anchor n>=1: use n-th model as anchor
-    config_dir=1,  # m>=1 use m-th as config
-    use_k_minus_one_truncation=True,  # True: truncation + energy scaling False: full SVD (no truncation)
-    use_geometric_median=True,  # True: use geometric median False: use lower median
+    config_dir=1,    # m>=1 use m-th as config
+    use_k_minus_one_truncation=True,  # True: truncation + energy scaling False: full SVD
+    use_geometric_median=True,        # True: use geometric median False: use standard median
 )
 ```
 
