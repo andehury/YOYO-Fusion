@@ -11,13 +11,13 @@ This method can efficiently absorb the high-value knowledge and capabilities of 
 ## Key Features
 
 - **Consensus Center**: Determine the center (select a fine-tuned model) or estimate the center (standard median / geometric median).
-- **Subspace Truncation**: Projects weight differences into a low-rank subspace (rank ≤ K−1 for K models) to remove consensus noise.
+- **Subspace Truncation**: Projects weight differences into a low-rank subspace with adaptive rank determined by the principle rank of the residual matrix, effectively filtering out consensus noise.
 - **Robust Fusion**: Supports both IRLS-based Welsch weighting and Tukey biweight for outlier suppression in the subspace.
 - **Matrix Boost (Optional)**: Enhances residual components for linear/attention layers by equalizing singular values to the maximum.
 - **Norm Preservation**: Restores output tensor norm to match either the average or a specific input model’s norm.
 - **Sign Alignment**: Optional coordinate-wise sign flipping to align directions with a reference model.
 - **Full Compatibility**: Supports both single-file (`model.safetensors`) and sharded (`model.safetensors.index.json`) Hugging Face–style models.
-- **Memory Efficient**: Processes one tensor at a time; no need to load all models fully into GPU memory.
+- **Memory Efficient**: Processes one tensor at a time; no need to load all models fully into CPU memory.
 
 ---
 
