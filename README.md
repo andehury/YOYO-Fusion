@@ -47,7 +47,7 @@ run_merge(
     ],
     output_dir="path/to/merged_model",
     anchor_index=0,                # 0: robust center; n≥1: use n-th model as anchor
-    config_dir=1,                  # use config from the n-th model (1-based)
+    config_dir=1,                  # use config from the n-th model
     use_geometric_median=True,     # only used if anchor_index=0
     use_matrix_boost=False,        # apply Matrix Boost for linear/attention layers
     sign_reference_mode=0,         # 0: no alignment; n≥1: align signs to n-th model
