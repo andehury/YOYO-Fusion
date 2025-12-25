@@ -223,7 +223,7 @@ y = α · y₁
 | Balanced fusion of multiple models | `anchor_index=0`, `use_geometric_median=True`, `use_irls=True` |
 | Preserve base model behavior | `anchor_index=1`, `sign_reference_mode=1`, `norm_restore_mode=1` |
 | Maximize robustness against outliers | `use_irls=True`, `use_geometric_median=True` |
-| Fast fusion with strong noise suppression | `use_irls=False` (Tukey), `use_matrix_boost=False` |
+| Fast fusion with strong noise suppression | `use_irls=False`, `use_matrix_boost=False` |
 
 ---
 
