@@ -10,12 +10,14 @@ This method can efficiently absorb the high-value knowledge and capabilities of 
 
 ## Key Features
 
-- Consensus Center: Determine the center (select a fine-tuned model) or estimate the center (lower median / geometric median)
-- Subspace Truncation: Projects weight differences into a low-rank subspace (rank ≤ K−1 for K models) to remove consensus noise.
-- Outlier Suppression: Applies Tukey’s biweight weighting in the subspace to downweight anomalous models per dimension.
-- Norm Preservation: Automatically rescales output to match the average norm statistics of input models.
-- Full Compatibility: Supports both single-file (`model.safetensors`) and sharded (`model.safetensors.index.json`) Hugging Face–style models.
-- Memory Efficient: Processes one tensor at a time; no need to load all models fully into GPU memory.
+- **Consensus Center**: Determine the center (select a fine-tuned model) or estimate the center (standard median / geometric median).
+- **Subspace Truncation**: Projects weight differences into a low-rank subspace (rank ≤ K−1 for K models) to remove consensus noise.
+- **Robust Fusion**: Supports both IRLS-based Welsch weighting and Tukey biweight for outlier suppression in the subspace.
+- **Matrix Boost (Optional)**: Enhances residual components for linear/attention layers by equalizing singular values to the maximum.
+- **Norm Preservation**: Restores output tensor norm to match either the average or a specific input model’s norm.
+- **Sign Alignment**: Optional coordinate-wise sign flipping to align directions with a reference model.
+- **Full Compatibility**: Supports both single-file (`model.safetensors`) and sharded (`model.safetensors.index.json`) Hugging Face–style models.
+- **Memory Efficient**: Processes one tensor at a time; no need to load all models fully into GPU memory.
 
 ---
 
@@ -44,17 +46,19 @@ run_merge(
         "path/to/model_C"
     ],
     output_dir="path/to/merged_model",
-    anchor_index=0,  # n=0: no anchor n>=1: use n-th model as anchor
-    config_dir=1,    # m>=1 use m-th as config
-    use_k_minus_one_truncation=True,  # True: truncation + energy scaling False: full SVD
-    use_geometric_median=True,        # True: use geometric median False: use standard median
+    anchor_index=0,                # 0: robust center; n≥1: use n-th model as anchor
+    config_dir=1,                  # use config from the n-th model (1-based)
+    use_geometric_median=True,     # only used if anchor_index=0
+    use_matrix_boost=False,        # apply Matrix Boost for linear/attention layers
+    sign_reference_mode=0,         # 0: no alignment; n≥1: align signs to n-th model
+    norm_restore_mode=0,           # 0: average norm; n≥1: use n-th model’s norm
+    use_irls=True,                 # True: Welsch IRLS; False: Tukey biweight
 )
 ```
 
 ---
 
 ## Algorithm Steps
-
 
 ### Step 0: Inputs
 
@@ -68,200 +72,158 @@ where K ≥ 2 and each tᵢ ∈ ℝᴰ
 - `anchor_index` ∈ {0, 1, ..., K}
   - If 0: no anchor; use a robust center (median or geometric median)
   - If n ≥ 1: use model n as anchor (i.e., tₙ)
-- `use_geometric_median` ∈ {True, False} (only effective when anchor_index == 0)
-- `use_k_minus_one_truncation` ∈ {True, False}
+- `use_geometric_median` ∈ {True, False} (only effective when `anchor_index == 0`)
+- `use_irls` ∈ {True, False}: selects between Welsch IRLS (iterative) or Tukey biweight (non-iterative) robust fusion
+- `use_matrix_boost` ∈ {True, False}: applies singular-value equalization for 2D layers
+- `sign_reference_mode` ∈ {0, 1, ..., K}: enables coordinate-wise sign alignment to a reference model
+- `norm_restore_mode` ∈ {0, 1, ..., K}: selects norm target for final scaling
 
-### Step 1: Normalize Input Tensors
+### Step 1: Sign Alignment (Optional)
+
+If `sign_reference_mode = r ≥ 1`:
+- For each element j, flip sign of tᵢⱼ if sign(tᵢⱼ) ≠ sign(tᵣⱼ) and tᵣⱼ ≠ 0.
+
+Output aligned tensors: {t̃₁, ..., t̃ₖ}
+
+### Step 2: Normalize Input Tensors
 
 Compute RMS normalization for each tensor:
 ```
-rᵢ = RMS(tᵢ) = √[(1/D) ∑ⱼ₌₁ᴰ tᵢⱼ² + ε], where ε = 10⁻⁸
+rᵢ = RMS(t̃ᵢ) = √[(1/D) ∑ⱼ₌₁ᴰ t̃ᵢⱼ² + ε], ε = 10⁻⁸
 ```
 ```
-uᵢ = tᵢ / (rᵢ + ε)
+uᵢ = t̃ᵢ / (rᵢ + ε)
 ```
 
-Obtain normalized tensor matrix:
+Form normalized matrix:
 ```
 U = [u₁, u₂, ..., uₖ]ᵀ ∈ ℝᴷ×ᴰ
 ```
 
-### Step 2: Determine Center Point m ∈ ℝᴰ
+### Step 3: Determine Center Point m ∈ ℝᴰ
 
-**Case A: anchor_index = n (n ≥ 1) (anchor mode)**
+**Case A: anchor_index = n ≥ 1**
 ```
 m = uₙ
 ```
 
-Note: anchor_index = 1 corresponds to the first model (model_dirs[0]) due to 1-based indexing in the parameter.
+**Case B: anchor_index = 0**
+- If `use_geometric_median = True`:  
+  m = geometric median of {u₁, ..., uₖ} via Weiszfeld-style iteration.
+- Else:  
+  mⱼ = median(u₁ⱼ, ..., uₖⱼ), ∀ j
 
-**Case B: anchor_index = 0 (no anchor)**
+### Step 4: Compute Residual Matrix
 
-**Subcase B1: use_geometric_median = True**
-Compute the geometric median via the Weiszfeld algorithm:
 ```
-m = argminᵧ ∑ᵢ₌₁ᴷ ||uᵢ - y||₂
-```
-
-Initialized with the coordinate-wise median and iterated to convergence.
-
-**Subcase B2: use_geometric_median = False**
-Use coordinate-wise median:
-```
-mⱼ = median(u₁ⱼ, u₂ⱼ, ..., uₖⱼ), ∀ j = 1,...,D
+R = U - 1ₖ mᵀ ∈ ℝᴷ×ᴰ
 ```
 
-### Step 3: Compute Residual Matrix
+If ||R||_F < 10⁻⁷, set y' = m and skip to Step 7.
+
+### Step 5: SVD and Subspace Projection
+
+Perform SVD on Rᵀ (in float64):
 ```
-R = U - 1ₖmᵀ ∈ ℝᴷ×ᴰ
+Rᵀ = U Σ Vᵀ
 ```
 
-where 1ₖ is a column vector of ones.
-
-If ||R||_F < 10⁻⁷ (models are nearly identical), set:
+Compute total energy E = ∑ σᵢ².  
+Estimate effective rank via principle rank:
 ```
-y' = m
-```
-and skip to Step 6.
-
-### Step 4: SVD Decomposition and Subspace Truncation
-
-Perform SVD on Rᵀ ∈ ℝᴰ×ᴷ (in float64 for numerical stability):
-```
-Rᵀ = UΣVᵀ
+PR = (∑ σᵢ²)² / (∑ σᵢ⁴ + 10⁻¹⁶)
+r_target = max(1, min(round(PR), K, rank(R)))
 ```
 
-where U ∈ ℝᴰ×ʳ, Σ ∈ ℝʳ×ʳ, and r = min(K, D)
-
-Determine target rank r_target and scaling flag:
-- If use_k_minus_one_truncation = True:
-  ```
-  r_target = min(K - 1, r)
-  ```
-  and energy scaling is enabled
-- If use_k_minus_one_truncation = False:
-  ```
-  r_target = min(K, r)
-  ```
-  and no scaling is applied
-- If r_target ≤ 0, return y' = m
-
-If energy scaling is enabled (use_k_minus_one_truncation = True):
+Compute energy-based scale factor:
 ```
-p = [∑ᵢ₌₁ʳ_target σᵢ²] / [∑ᵢ₌₁ʳ σᵢ² + ε]
-```
-```
-α_scale = min(1/(p + ε), 10.0)
+E_retained = ∑_{i=1}^{r_target} σᵢ²
+α_scale = min(√(E / (E_retained + 10⁻¹⁶)), 10.0)
 ```
 
-Extract top r_target left singular vectors:
+Project into subspace:
 ```
 U_m = U[:, :r_target] ∈ ℝᴰ×ʳ_target
+Z = R U_m ∈ ℝᴷ×ʳ_target
 ```
 
-Project residuals onto subspace:
+### Step 6: Robust Weighted Fusion in Subspace
+
+#### If `use_irls = True` (Welsch IRLS):
+- Initialize z* = median(Z, dim=0)
+- Iterate up to `irls_max_iter`:
+  - Compute residual Δ = Z − z*
+  - Per-dimension scale: sⱼ = 1.4826 · median(|Δ₁ⱼ|, ..., |Δₖⱼ|)
+  - Global scale: s_global = 1.4826 · median(||Δ₁||₂, ..., ||Δₖ||₂)
+  - Welsch weights (c = 2.985):
+    ```
+    wᵢⱼ = exp(−( |Δᵢⱼ| / (c sⱼ) )² ) · exp(−( ||Δᵢ||₂ / (c s_global) )² )
+    ```
+  - Update: z* = (∑ wᵢⱼ Zᵢⱼ) / (∑ wᵢⱼ + ε)
+  - Stop if ||z*ₙₑ𝓌 − z*|| < tol
+
+#### If `use_irls = False` (Tukey Biweight):
+- Single-step computation with c = 4.685:
+  ```
+  wᵢⱼ^coord = [max(0, 1 − (|Δᵢⱼ|/(c sⱼ))²)]²
+  wᵢ^global = [max(0, 1 − (||Δᵢ||₂/(c s_global))²)]²
+  Wᵢⱼ = wᵢⱼ^coord · wᵢ^global
+  z* = (∑ Wᵢⱼ Zᵢⱼ) / (∑ Wᵢⱼ + ε)
+  ```
+
+Reconstruct residual:
 ```
-Z = RU_m ∈ ℝᴷ×ʳ_target
+r* = α_scale · U_m z*
 ```
 
-### Step 5: Robust Weighted Averaging (M-estimator with Tukey Biweight)
+### Step 7: Optional Matrix Boost
 
-For each dimension j = 1, ..., r_target:
+If `use_matrix_boost = True`, and tensor is 2D and not embedding/lm_head:
+- Reshape r* → R* ∈ ℝ^{m×n}
+- Compute SVD: R* = U_R Σ_R V_Rᵀ
+- If Σ_R non-empty, set all singular values to σ_max = Σ_R[0]
+- Reconstruct: R_boost = U_R diag(σ_max, ..., σ_max) V_Rᵀ
+- Update r* = vec(R_boost)
 
-Compute MAD-based scale estimate:
-```
-sⱼ = 1.4826 · median(|Z₁ⱼ|, ..., |Zₖⱼ|)
-```
-
-Ensure numerical stability:
-```
-sⱼ = max(sⱼ, 10⁻¹²)
-```
-
-Compute global row norms:
-```
-||zᵢ||₂ = √[∑ⱼ₌₁ʳ_target Zᵢⱼ²], i = 1,...,K
-```
-```
-s_global = 1.4826 · median(||z₁||₂, ..., ||zₖ||₂)
-```
-
-Tukey biweight weights (with tuning constant c = 4.685):
-
-Coordinate-wise weights:
-```
-wᵢⱼ^coord = 
-{ [1 - (|Zᵢⱼ|/(c·sⱼ))²]² if |Zᵢⱼ| < c·sⱼ
-{ 0 otherwise
-```
-
-Global weights:
-```
-wᵢ^global = 
-{ [1 - (||zᵢ||₂/(c·s_global))²]² if ||zᵢ||₂ < c·s_global
-{ 0 otherwise
-```
-
-Combined weights:
-```
-Wᵢⱼ = wᵢⱼ^coord · wᵢ^global
-```
-
-Compute weighted average per dimension:
-```
-zⱼ* = [∑ᵢ₌₁ᴷ WᵢⱼZᵢⱼ] / [∑ᵢ₌₁ᴷ Wᵢⱼ + ε]
-```
-
-yielding z* ∈ ℝʳ_target
-
-Map back to original space:
-```
-r* = α_scale · U_mz*
-```
-
-Preliminary merged tensor:
+Final preliminary tensor:
 ```
 y' = m + r*
 ```
 
-### Step 6: Restore Original Scale and Normalize
+### Step 8: Restore RMS Scale
 
-Mean RMS of original tensors:
 ```
-r̄ = (1/K) ∑ᵢ₌₁ᴷ rᵢ
-```
-```
+r̄ = (1/K) ∑ rᵢ
 y₁ = y' · r̄
 ```
 
-Mean L2 norm of original tensors:
+### Step 9: Norm Restoration
+
+Original L2 norms: nᵢ = ||t̃ᵢ||₂
+
+- If `norm_restore_mode = 0`: n_target = (1/K) ∑ nᵢ
+- If `norm_restore_mode = m ≥ 1`: n_target = nₘ₋₁
+
+Final scaling:
 ```
-n̄ = (1/K) ∑ᵢ₌₁ᴷ ||tᵢ||₂
+α = n_target / (||y₁||₂ + ε)
+y = α · y₁
 ```
 
-Norm of current merged tensor:
-```
-n_y = ||y₁||₂
-```
+### Step 10: Output
 
-Final scaling to match average norm:
-```
-α = n̄ / (n_y + ε), y = α · y₁
-```
+**Merged Tensor = y ∈ ℝᴰ**, reshaped to original dimensions.
 
-### Step 7: Output
-
-**Merged Tensor = y ∈ ℝᴰ**
-
-Reshape to original tensor shape.
 ---
 
 ## Recommended Use Cases
 
 | Scenario | Recommended Settings |
 |--------|----------------------|
-| Absorb multiple models in a balanced manner | `anchor_index=0`,`use_geometric_median=True/False`,`use_k_minus_one_truncation=True` |
-| Preserve behavior of a specific model | `anchor_index=1`,`use_k_minus_one_truncation=True` |
+| Balanced fusion of multiple models | `anchor_index=0`, `use_geometric_median=True`, `use_irls=True` |
+| Preserve base model behavior | `anchor_index=1`, `sign_reference_mode=1`, `norm_restore_mode=1` |
+| Maximize robustness against outliers | `use_irls=True`, `use_geometric_median=True` |
+| Fast fusion with strong noise suppression | `use_irls=False` (Tukey), `use_matrix_boost=False` |
 
 ---
 
@@ -286,14 +248,17 @@ The script auto-detects whether models are sharded or single-file and handles bo
 
 ## Parameters Explained
 
-|Parameter|Type|Description|
+| Parameter | Type | Description |
 |---|---|---|
-|model_paths|List[str]|Paths to input model directories (>=2)|
-|output_dir|str|Output directory for merged model|
-|anchor_index|int|0: no anchor (robust center); n>=1: use n-th model as anchor (1-based)|
-|config_dir|int|Which model’s config/index files to copy|
-|use_k_minus_one_truncation|bool|True: truncation + energy scaling False: full SVD (no truncation)|
-|use_geometric_median|bool|True: use geometric median False: use lower median (only if `anchor_index=0`) |
+| `model_paths` | List[str] | Paths to input model directories (≥2) |
+| `output_dir` | str | Output directory for merged model |
+| `anchor_index` | int | 0: robust center; n≥1: use n-th model as anchor (1-based) |
+| `config_dir` | int | Which model’s config/index files to copy (1-based) |
+| `use_geometric_median` | bool | Use geometric median instead of coordinate-wise median (only if `anchor_index=0`) |
+| `use_matrix_boost` | bool | Apply Matrix Boost to 2D linear/attention layers |
+| `sign_reference_mode` | int | 0: no alignment; n≥1: align signs to n-th model |
+| `norm_restore_mode` | int | 0: match average L2 norm; n≥1: match n-th model’s norm |
+| `use_irls` | bool | True: use Welsch IRLS (iterative); False: use Tukey biweight (single-step) |
 
 ---
 
@@ -304,5 +269,7 @@ Licensed under the Apache License, Version 2.0 (the "License"); you may not use 
 http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
 ---
-Note: This tool merges weights only. It does not merge tokenizers, configs, or generation settings—those are copied from the config_dir model. Always verify compatibility of input models (same architecture, vocab size, etc.).
+
+**Note**: This tool merges weights only. It does not merge tokenizers, configs, or generation settings—those are copied from the `config_dir` model. Always verify compatibility of input models (same architecture, vocab size, etc.).
