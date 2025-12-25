@@ -272,4 +272,4 @@ Unless required by applicable law or agreed to in writing, software distributed 
 
 ---
 
-**Note**: This tool merges weights only. It does not merge tokenizers, configs, or generation settings—those are copied from the `config_dir` model. Always verify compatibility of input models (same architecture, vocab size, etc.).
+**Note**: This tool merges weights only. It does not merge tokenizers, configs, or generation settings—those are copied from the config_dir model. Always verify compatibility of input models (same architecture, vocab size, etc.).
