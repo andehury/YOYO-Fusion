@@ -12,10 +12,11 @@ This method can efficiently absorb the high-value knowledge and capabilities of 
 
 - **Consensus Center**: Determine the center (select a fine-tuned model) or estimate the center (standard median / geometric median).
 - **Subspace Truncation**: Projects weight differences into a low-rank subspace using adaptive rank via principle rank to remove consensus noise.
-- **IRLS Option**: Supports both IRLS-based Welsch weighting and Tukey biweight for outlier suppression in the subspace.
+- **Tukey Biweight**: Uses coordinate-wise and global Tukey biweight to suppress outliers in the subspace.
 - **Matrix Boost**: Enhances residual components for linear/attention layers by equalizing singular values to the maximum.
-- **Norm Preservation**: Restores output tensor norm to match either the average or a specific input model’s norm.
+- **Norm Preservation**: Always restores output tensor norm to the average L2 norm of input tensors.
 - **Sign Alignment**: Optional coordinate-wise sign flipping to align directions with a reference model.
+- **Z-Star Initialization Control**: Choose between median-based or zero-initialized robust center in subspace (`use_z_median`).
 - **Full Compatibility**: Supports both single-file (`model.safetensors`) and sharded (`model.safetensors.index.json`) Hugging Face–style models.
 - **Memory Efficient**: Processes one tensor at a time; no need to load all models fully into CPU memory.
 
@@ -51,8 +52,7 @@ run_merge(
     use_geometric_median=True,     # only used if anchor_index=0
     use_matrix_boost=False,        # apply Matrix Boost for linear/attention layers
     sign_reference_mode=0,         # 0: no alignment; n≥1: align signs to n-th model
-    norm_restore_mode=0,           # 0: average norm; n≥1: use n-th model’s norm
-    use_irls=True,                 # True: Welsch IRLS; False: Tukey biweight
+    use_z_median=True,             # True: init z* with median; False: init with zeros
 )
 ```
 
@@ -73,10 +73,9 @@ where K ≥ 2 and each tᵢ ∈ ℝᴰ
   - If 0: no anchor; use a robust center (median or geometric median)
   - If n ≥ 1: use model n as anchor (i.e., tₙ)
 - `use_geometric_median` ∈ {True, False} (only effective when `anchor_index == 0`)
-- `use_irls` ∈ {True, False}: selects between Welsch IRLS (iterative) or Tukey biweight (non-iterative) robust fusion
+- `use_z_median` ∈ {True, False}: controls initialization of `z*` in subspace fusion
 - `use_matrix_boost` ∈ {True, False}: applies singular-value equalization for 2D layers
 - `sign_reference_mode` ∈ {0, 1, ..., K}: enables coordinate-wise sign alignment to a reference model
-- `norm_restore_mode` ∈ {0, 1, ..., K}: selects norm target for final scaling
 
 ### Step 1: Sign Alignment (Optional)
 
@@ -147,23 +146,26 @@ U_m = U[:, :r_target] ∈ ℝᴰ×ʳ_target
 Z = R U_m ∈ ℝᴷ×ʳ_target
 ```
 
-### Step 6: Robust Weighted Fusion in Subspace
+### Step 6: Robust Weighted Fusion in Subspace (Tukey Biweight)
 
-#### If `use_irls = True` (Welsch IRLS):
-- Initialize z* = median(Z, dim=0)
-- Iterate up to `irls_max_iter`:
-  - Compute residual Δ = Z − z*
-  - Per-dimension scale: sⱼ = 1.4826 · median(|Δ₁ⱼ|, ..., |Δₖⱼ|)
-  - Global scale: s_global = 1.4826 · median(||Δ₁||₂, ..., ||Δₖ||₂)
-  - Welsch weights (c = 2.985):
-    ```
-    wᵢⱼ = exp(−( |Δᵢⱼ| / (c sⱼ) )² ) · exp(−( ||Δᵢ||₂ / (c s_global) )² )
-    ```
-  - Update: z* = (∑ wᵢⱼ Zᵢⱼ) / (∑ wᵢⱼ + ε)
-  - Stop if ||z*ₙₑ𝓌 − z*|| < tol
-
-#### If `use_irls = False` (Tukey Biweight):
-- Single-step computation with c = 4.685:
+- Initialize `z*`:
+  ```
+  - If use_z_median = True: z* = median(Z, dim=0)
+  - If use_z_median = False: z* = 0 ∈ ℝʳ_target
+  ```
+- Compute residual:
+  ```
+  Δ = Z − z*
+  ```
+- Per-dimension scale:
+  ```
+  sⱼ = 1.4826 · median(|Δ₁ⱼ|, ..., |Δₖⱼ|)
+  ```
+- Global scale:
+  ```
+  s_global = 1.4826 · median(||Δ₁||₂, ..., ||Δₖ||₂)
+  ```
+- Tukey weights (c = 4.685):
   ```
   wᵢⱼ^coord = [max(0, 1 − (|Δᵢⱼ|/(c sⱼ))²)]²
   wᵢ^global = [max(0, 1 − (||Δᵢ||₂/(c s_global))²)]²
@@ -197,12 +199,10 @@ r̄ = (1/K) ∑ rᵢ
 y₁ = y' · r̄
 ```
 
-### Step 9: Norm Restoration
+### Step 9: Norm Restoration (Fixed to Average)
 
-Original L2 norms: nᵢ = ||t̃ᵢ||₂
-
-- If `norm_restore_mode = 0`: n_target = (1/K) ∑ nᵢ
-- If `norm_restore_mode = m ≥ 1`: n_target = nₘ₋₁
+Original L2 norms: nᵢ = ||t̃ᵢ||₂  
+Target norm: n_target = (1/K) ∑ nᵢ
 
 Final scaling:
 ```
@@ -220,10 +220,10 @@ y = α · y₁
 
 | Scenario | Recommended Settings |
 |--------|----------------------|
-| Balanced fusion of multiple models | `anchor_index=0`, `use_geometric_median=True`, `use_irls=True` |
-| Preserve base model behavior | `anchor_index=1`, `sign_reference_mode=1`, `norm_restore_mode=1` |
-| Maximize robustness against outliers | `use_irls=True`, `use_geometric_median=True` |
-| Fast fusion with strong noise suppression | `use_irls=False`, `use_matrix_boost=False` |
+| Balanced fusion of multiple models | `anchor_index=0`, `use_geometric_median=True`, `use_z_median=True` |
+| Preserve base model behavior | `anchor_index=1`, `sign_reference_mode=1`, `use_z_median=False` |
+| Maximize robustness with fast convergence | `use_z_median=True`, `use_geometric_median=True` |
+| Test ablation of median prior | `use_z_median=False`|
 
 ---
 
@@ -257,8 +257,7 @@ The script auto-detects whether models are sharded or single-file and handles bo
 | `use_geometric_median` | bool | Use geometric median instead of coordinate-wise median (only if `anchor_index=0`) |
 | `use_matrix_boost` | bool | Apply Matrix Boost to 2D linear/attention layers |
 | `sign_reference_mode` | int | 0: no alignment; n≥1: align signs to n-th model |
-| `norm_restore_mode` | int | 0: match average L2 norm; n≥1: match n-th model’s norm |
-| `use_irls` | bool | True: use Welsch IRLS (iterative); False: use Tukey biweight (single-step) |
+| `use_z_median` | bool | True: initialize `z*` with median in subspace; False: use zero vector |
 
 ---
 
