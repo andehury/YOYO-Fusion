@@ -85,10 +85,7 @@ def subspace_robust_merge(
         use_matrix_boost: bool = True,
         tensor_key: str = None,
         sign_reference_mode: int = 0,
-        irls_max_iter: int = 100,
-        irls_tol: float = 1e-6,
-        norm_restore_mode: int = 0,
-        use_irls: bool = True,
+        use_z_median: bool = True,
 ) -> torch.Tensor:
     assert len(tensors) >= 2, "Need at least two tensors to merge."
     K = len(tensors)
@@ -160,65 +157,35 @@ def subspace_robust_merge(
             U_m = torch.from_numpy(U_m_np).to(torch.float32)
             Z = torch.matmul(R, U_m)
 
-            # --- Robust combination with optional IRLS ---
-            if use_irls:
-                # Original Welsch IRLS
+            if use_z_median:
                 z_star = standard_median(Z, dim=0).clone()
-                c_welsch = 2.985
-                for _ in range(irls_max_iter):
-                    delta = Z - z_star.unsqueeze(0)
-                    z_row_norms = torch.linalg.vector_norm(delta, dim=1)
-
-                    s_coord_vals = []
-                    for j in range(delta.shape[1]):
-                        s_j = mad_scale(delta[:, j])
-                        s_coord_vals.append(max(s_j, 1e-12))
-                    s_coord = torch.tensor(s_coord_vals, dtype=torch.float32)
-
-                    s_global = mad_scale(z_row_norms)
-                    s_global = max(s_global, 1e-12)
-
-                    coord_ratio = torch.abs(delta) / (c_welsch * s_coord + eps)
-                    w_coord = (-coord_ratio ** 2).exp()
-                    global_ratio = z_row_norms / (c_welsch * s_global + eps)
-                    w_global = (-global_ratio ** 2).exp().view(-1, 1)
-                    W = w_coord * w_global
-
-                    numerator_w = torch.sum(W * Z, dim=0)
-                    denom_w = torch.sum(W, dim=0) + eps
-                    z_star_new = numerator_w / denom_w
-
-                    if torch.linalg.norm(z_star_new - z_star) < irls_tol:
-                        z_star = z_star_new
-                        break
-                    z_star = z_star_new
             else:
-                # Tukey biweight (non-IRLS)
-                z_star = standard_median(Z, dim=0).clone()
-                c_tukey = 4.685
+                z_star = torch.zeros(Z.shape[1], dtype=Z.dtype, device=Z.device)
 
-                delta = Z - z_star.unsqueeze(0)
-                z_row_norms = torch.linalg.vector_norm(delta, dim=1)
+            c_tukey = 4.685
 
-                s_coord_vals = []
-                for j in range(delta.shape[1]):
-                    s_j = mad_scale(delta[:, j])
-                    s_coord_vals.append(max(s_j, 1e-12))
-                s_coord = torch.tensor(s_coord_vals, dtype=torch.float32)
+            delta = Z - z_star.unsqueeze(0)
+            z_row_norms = torch.linalg.vector_norm(delta, dim=1)
 
-                s_global = mad_scale(z_row_norms)
-                s_global = max(s_global, 1e-12)
+            s_coord_vals = []
+            for j in range(delta.shape[1]):
+                s_j = mad_scale(delta[:, j])
+                s_coord_vals.append(max(s_j, 1e-12))
+            s_coord = torch.tensor(s_coord_vals, dtype=torch.float32)
 
-                coord_ratio = torch.abs(delta) / (c_tukey * s_coord + eps)
-                w_coord = torch.clamp(1.0 - coord_ratio ** 2, min=0.0) ** 2
-                global_ratio = z_row_norms / (c_tukey * s_global + eps)
-                w_global = torch.clamp(1.0 - global_ratio ** 2, min=0.0) ** 2
-                w_global = w_global.view(-1, 1)
-                W = w_coord * w_global
+            s_global = mad_scale(z_row_norms)
+            s_global = max(s_global, 1e-12)
 
-                numerator_w = torch.sum(W * Z, dim=0)
-                denom_w = torch.sum(W, dim=0) + eps
-                z_star = numerator_w / denom_w
+            coord_ratio = torch.abs(delta) / (c_tukey * s_coord + eps)
+            w_coord = torch.clamp(1.0 - coord_ratio ** 2, min=0.0) ** 2
+            global_ratio = z_row_norms / (c_tukey * s_global + eps)
+            w_global = torch.clamp(1.0 - global_ratio ** 2, min=0.0) ** 2
+            w_global = w_global.view(-1, 1)
+            W = w_coord * w_global
+
+            numerator_w = torch.sum(W * Z, dim=0)
+            denom_w = torch.sum(W, dim=0) + eps
+            z_star = numerator_w / denom_w
 
             r_star = torch.matmul(U_m, z_star) * scale_factor
 
@@ -235,20 +202,14 @@ def subspace_robust_merge(
                     r_star = R_boosted.to(torch.float32).view(-1)
 
             y_prime = M + r_star
-            del V64, U_np, S_np, VT_np, U_m, Z, z_star
+            del V64, U_np, S_np, VT_np, U_m, Z, delta, w_coord, w_global, W
 
     avg_rms = torch.mean(rms_vals)
     y = y_prime * avg_rms
 
-    # --- Norm restoration with mode selection ---
+    # --- Norm restoration (always average norm) ---
     orig_norms = torch.stack([torch.linalg.vector_norm(x) for x in xs])
-    if norm_restore_mode == 0:
-        target_norm = torch.mean(orig_norms)
-    else:
-        idx = norm_restore_mode - 1
-        if not (0 <= idx < K):
-            raise ValueError(f"norm_restore_mode={norm_restore_mode} out of range for {K} models.")
-        target_norm = orig_norms[idx]
+    target_norm = torch.mean(orig_norms)
 
     y_norm = torch.linalg.vector_norm(y)
     alpha = (target_norm / (y_norm + eps)).item()
@@ -341,8 +302,7 @@ def run_merge(
         use_geometric_median: bool = False,
         use_matrix_boost: bool = True,
         sign_reference_mode: int = 0,
-        norm_restore_mode: int = 0,
-        use_irls: bool = True,
+        use_z_median: bool = True,
 ):
     assert len(model_paths) >= 2, "At least two models required."
     model_dirs = [Path(p) for p in model_paths]
@@ -391,8 +351,7 @@ def run_merge(
             use_matrix_boost=use_matrix_boost,
             tensor_key=tensor_name,
             sign_reference_mode=sign_reference_mode,
-            norm_restore_mode=norm_restore_mode,
-            use_irls=use_irls,
+            use_z_median=use_z_median,
         )
 
     # 6. Main loop: shard by shard
@@ -509,11 +468,10 @@ if __name__ == "__main__":
     run_merge(
         model_paths=paths,
         output_dir=out_path,
-        anchor_index=0,
+        anchor_index=1,
         config_dir=1,
-        use_geometric_median=True,
-        use_matrix_boost=True,
-        sign_reference_mode=1,
-        norm_restore_mode=0,
-        use_irls=False,
+        use_geometric_median=False,
+        use_matrix_boost=False,
+        sign_reference_mode=0,
+        use_z_median=True,
     )
