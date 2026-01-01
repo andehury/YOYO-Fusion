@@ -135,74 +135,81 @@ def subspace_robust_merge(
     if torch.max(res_norms) < 1e-7:
         y_prime = M.clone()
     else:
-        V64 = R.transpose(0, 1).contiguous().numpy().astype(np.float64, copy=False)
-        U_np, S_np, VT_np = np.linalg.svd(V64, full_matrices=False)
+        # --- Attempt robust refinement with SVD-based subspace ---
+        try:
+            V64 = R.transpose(0, 1).contiguous().numpy().astype(np.float64, copy=False)
+            U_np, S_np, VT_np = np.linalg.svd(V64, full_matrices=False)
 
-        total_energy = np.sum(S_np ** 2)
-        if total_energy < 1e-16:
-            y_prime = M.clone()
-        else:
-            lambdas = S_np ** 2
-            numerator = (lambdas.sum()) ** 2
-            denominator = (lambdas ** 2).sum() + 1e-16
-            pr = numerator / denominator
-            target_rank = int(round(pr))
-            target_rank = max(1, min(target_rank, K, len(S_np)))
-
-            retained_energy = np.sum(S_np[:target_rank] ** 2)
-            scale_factor = np.sqrt(total_energy / (retained_energy + 1e-16))
-            scale_factor = min(scale_factor, 10.0)
-
-            U_m_np = U_np[:, :target_rank]
-            U_m = torch.from_numpy(U_m_np).to(torch.float32)
-            Z = torch.matmul(R, U_m)
-
-            if use_z_median:
-                z_star = standard_median(Z, dim=0).clone()
+            total_energy = np.sum(S_np ** 2)
+            if total_energy < 1e-16:
+                y_prime = M.clone()
             else:
-                z_star = torch.zeros(Z.shape[1], dtype=Z.dtype, device=Z.device)
+                lambdas = S_np ** 2
+                numerator = (lambdas.sum()) ** 2
+                denominator = (lambdas ** 2).sum() + 1e-16
+                pr = numerator / denominator
+                target_rank = int(round(pr))
+                target_rank = max(1, min(target_rank, K, len(S_np)))
 
-            c_tukey = 4.685
+                retained_energy = np.sum(S_np[:target_rank] ** 2)
+                scale_factor = np.sqrt(total_energy / (retained_energy + 1e-16))
+                scale_factor = min(scale_factor, 10.0)
 
-            delta = Z - z_star.unsqueeze(0)
-            z_row_norms = torch.linalg.vector_norm(delta, dim=1)
+                U_m_np = U_np[:, :target_rank]
+                U_m = torch.from_numpy(U_m_np).to(torch.float32)
+                Z = torch.matmul(R, U_m)
 
-            s_coord_vals = []
-            for j in range(delta.shape[1]):
-                s_j = mad_scale(delta[:, j])
-                s_coord_vals.append(max(s_j, 1e-12))
-            s_coord = torch.tensor(s_coord_vals, dtype=torch.float32)
+                if use_z_median:
+                    z_star = standard_median(Z, dim=0).clone()
+                else:
+                    z_star = torch.zeros(Z.shape[1], dtype=Z.dtype, device=Z.device)
 
-            s_global = mad_scale(z_row_norms)
-            s_global = max(s_global, 1e-12)
+                c_tukey = 4.685
 
-            coord_ratio = torch.abs(delta) / (c_tukey * s_coord + eps)
-            w_coord = torch.clamp(1.0 - coord_ratio ** 2, min=0.0) ** 2
-            global_ratio = z_row_norms / (c_tukey * s_global + eps)
-            w_global = torch.clamp(1.0 - global_ratio ** 2, min=0.0) ** 2
-            w_global = w_global.view(-1, 1)
-            W = w_coord * w_global
+                delta = Z - z_star.unsqueeze(0)
+                z_row_norms = torch.linalg.vector_norm(delta, dim=1)
 
-            numerator_w = torch.sum(W * Z, dim=0)
-            denom_w = torch.sum(W, dim=0) + eps
-            z_star = numerator_w / denom_w
+                s_coord_vals = []
+                for j in range(delta.shape[1]):
+                    s_j = mad_scale(delta[:, j])
+                    s_coord_vals.append(max(s_j, 1e-12))
+                s_coord = torch.tensor(s_coord_vals, dtype=torch.float32)
 
-            r_star = torch.matmul(U_m, z_star) * scale_factor
+                s_global = mad_scale(z_row_norms)
+                s_global = max(s_global, 1e-12)
 
-            if (use_matrix_boost and
-                    len(original_shape) == 2 and
-                    tensor_key is not None and
-                    is_linear_or_attention_layer(tensor_key)):
-                R_star = r_star.view(original_shape).to(torch.float64)
-                U_R, S_R, V_Rt = torch.linalg.svd(R_star, full_matrices=False)
-                if S_R.numel() > 0:
-                    sigma_max = S_R[0]
-                    S_boosted = torch.full_like(S_R, sigma_max)
-                    R_boosted = U_R @ torch.diag(S_boosted) @ V_Rt
-                    r_star = R_boosted.to(torch.float32).view(-1)
+                coord_ratio = torch.abs(delta) / (c_tukey * s_coord + eps)
+                w_coord = torch.clamp(1.0 - coord_ratio ** 2, min=0.0) ** 2
+                global_ratio = z_row_norms / (c_tukey * s_global + eps)
+                w_global = torch.clamp(1.0 - global_ratio ** 2, min=0.0) ** 2
+                w_global = w_global.view(-1, 1)
+                W = w_coord * w_global
 
-            y_prime = M + r_star
+                numerator_w = torch.sum(W * Z, dim=0)
+                denom_w = torch.sum(W, dim=0) + eps
+                z_star = numerator_w / denom_w
+
+                r_star = torch.matmul(U_m, z_star) * scale_factor
+
+                if (use_matrix_boost and
+                        len(original_shape) == 2 and
+                        tensor_key is not None and
+                        is_linear_or_attention_layer(tensor_key)):
+                    R_star = r_star.view(original_shape).to(torch.float64)
+                    U_R, S_R, V_Rt = torch.linalg.svd(R_star, full_matrices=False)
+                    if S_R.numel() > 0:
+                        sigma_max = S_R[0]
+                        S_boosted = torch.full_like(S_R, sigma_max)
+                        R_boosted = U_R @ torch.diag(S_boosted) @ V_Rt
+                        r_star = R_boosted.to(torch.float32).view(-1)
+
+                y_prime = M + r_star
+
+            # Clean up large intermediates
             del V64, U_np, S_np, VT_np, U_m, Z, delta, w_coord, w_global, W
+
+        except (MemoryError, OSError, RuntimeError):
+            y_prime = M.clone()
 
     avg_rms = torch.mean(rms_vals)
     y = y_prime * avg_rms
