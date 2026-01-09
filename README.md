@@ -199,7 +199,7 @@ r̄ = (1/K) ∑ rᵢ
 y₁ = y' · r̄
 ```
 
-### Step 9: Norm Restoration (Fixed to Average)
+### Step 9: Norm Restoration
 
 Original L2 norms: nᵢ = ||t̃ᵢ||₂  
 Target norm: n_target = (1/K) ∑ nᵢ
