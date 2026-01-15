@@ -10,6 +10,7 @@ from safetensors import safe_open
 from safetensors.torch import save_file
 from tqdm import tqdm
 
+
 # ---------------------------
 # Key normalization
 # ---------------------------
@@ -235,8 +236,8 @@ class SmartModelLoader:
         if self.is_sharded:
             with open(model_dir / "model.safetensors.index.json", "r", encoding="utf-8") as f:
                 index = json.load(f)
-            self.weight_map = {normalize_key(k): v for k, v in index["weight_map"].items()}
-            self.shard_handles = {}  # cache open shards
+            self.weight_map = index["weight_map"]
+            self.shard_handles = {}
         else:
             self.weight_map = {"__SINGLE_FILE__": "model.safetensors"}
             self.single_file = model_dir / "model.safetensors"
@@ -251,22 +252,28 @@ class SmartModelLoader:
         return self.shard_handles[shard_name]
 
     def get_tensor(self, key: str) -> torch.Tensor:
-        normalized_key = normalize_key(key)
-        if normalized_key not in self.weight_map:
-            raise KeyError(f"Tensor {key} (normalized: {normalized_key}) not found in model {self.model_dir}")
-        shard_name = self.weight_map[normalized_key]
+        candidate_original_key = None
+        for original_key in self.weight_map:
+            if normalize_key(original_key) == key:
+                candidate_original_key = original_key
+                break
+
+        if candidate_original_key is None:
+            raise KeyError(f"Tensor {key} not found in model {self.model_dir}")
+
+        shard_name = self.weight_map[candidate_original_key]
         if shard_name == "__SINGLE_FILE__":
             with safe_open(str(self.single_file), framework="pt", device="cpu") as f:
-                return f.get_tensor(normalized_key)
+                return f.get_tensor(candidate_original_key)
         else:
             handle = self._get_shard_handle(shard_name)
-            return handle.get_tensor(normalized_key)
+            return handle.get_tensor(candidate_original_key)
 
     def release_shard(self, shard_name: str):
         """Release a specific shard's file handle to free memory."""
         if shard_name in self.shard_handles:
             del self.shard_handles[shard_name]
-            gc.collect()  # help release memory
+            gc.collect()
 
     def close(self):
         self.shard_handles.clear()
